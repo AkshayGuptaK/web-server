@@ -16,5 +16,8 @@
   "bugs": {
     "url": "https://github.com/AkshayGuptaK/web-server/issues"
   },
-  "homepage": "https://github.com/AkshayGuptaK/web-server#readme"
+  "homepage": "https://github.com/AkshayGuptaK/web-server#readme",
+  "devDependencies": {
+    "standard": "^12.0.1"
+  }
 }
