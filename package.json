@@ -1,8 +1,8 @@
 {
   "name": "web-server",
   "version": "1.0.0",
-  "description": "HTTP server using sockets",
-  "main": "index.js",
+  "description": "HTTP server using net module and sockets",
+  "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
