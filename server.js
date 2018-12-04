@@ -6,7 +6,11 @@ const methods = ['GET']
 const contentTypes = {
   '.txt': 'text/plain',
   '.html': 'text/html',
-  '.json': 'application/json'
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.js': 'application/javascript',
+  '.png': 'image/png',
+  '.jpeg': 'image/jpeg'
 }
 
 function handleConnection (socket) {
@@ -60,17 +64,22 @@ function utcDate () {
 }
 
 function generateResponseHeader (extension, length) {
-  let header = ''
-  header = header.concat(`date: ${utcDate()}\r\n`)
-  header = header.concat('connection: keep-alive\r\n')
-  header = header.concat(`content-type: ${contentTypes[extension]}\r\n`)
-  header = header.concat(`content-length: ${length}\r\n`)
-  header = header.concat('\r\n')
-  return header // use join and array to refactor
+  let header = []
+  header.push(`date: ${utcDate()}`)
+  header.push(`content-type: ${contentTypes[extension]}`)
+  header.push(`content-length: ${length}`)
+  header.push('connection: keep-alive')
+  header.push('\n')
+  return header.join('\n')
 }
 
 function generateResponseBody (target) {
-  return fs.readFileSync(target, 'utf8')
+  try {
+    return fs.readFileSync(target, 'utf8')
+  } catch (err) {
+    console.log('File not found', target)
+    return null
+  }
 }
 
 function generateResponse (req) {
@@ -81,8 +90,9 @@ function generateResponse (req) {
   target = `public${target}`
 
   let body = generateResponseBody(target)
-
-  let header = generateResponseHeader(target.match(/[.](\w)+/)[0], body.length)
+  let ext = target.match(/[.](\w)+/)[0]
+  let length = body ? body.length : 0 // change error handling method
+  let header = generateResponseHeader(ext, length)
   return header.concat(body)
 }
 
