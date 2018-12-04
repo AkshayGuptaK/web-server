@@ -1,6 +1,8 @@
 const net = require('net')
 const fs = require('fs')
+const util = require('util')
 
+const readFile = util.promisify(fs.readFile)
 const resProtocol = 'HTTP/1.1'
 const methods = ['GET']
 const contentTypes = {
@@ -17,7 +19,7 @@ function handleConnection (socket) {
   console.log('Connection made')
   socket.on('error', (err) => console.log(err))
   socket.setEncoding('utf8')
-  socket.on('data', data => socket.write(handleRequest(data)))
+  socket.on('data', data => handleRequest(data, socket))
 }
 
 function parseRequestLine (requestLine) {
@@ -73,30 +75,31 @@ function generateResponseHeader (extension, length) {
   return header.join('\n')
 }
 
-function generateResponseBody (target) {
+async function generateResponseBody (target) {
   try {
-    return fs.readFileSync(target, 'utf8')
+    return await readFile(target)
   } catch (err) {
+    // console.log('Error', err)
     console.log('File not found', target)
     return null
   }
 }
 
-function generateResponse (req) {
+async function generateResponse (req) {
   let target = req[0].target
   if (target === '/') {
     target = '/index.html'
   }
   target = `public${target}`
 
-  let body = generateResponseBody(target)
   let ext = target.match(/[.](\w)+/)[0]
+  let body = await generateResponseBody(target)
   let length = body ? body.length : 0 // change error handling method
-  let header = generateResponseHeader(ext, length)
-  return header.concat(body)
+  let header = Buffer.from(generateResponseHeader(ext, length))
+  return [header, body]
 }
 
-function handleRequest (req) {
+async function handleRequest (req, socket) {
   let statusLine
   try {
     req = parseRequest(req)
@@ -108,9 +111,10 @@ function handleRequest (req) {
     return `${resProtocol} 501 NotImplemented\r\n`
   }
   statusLine = `${resProtocol} 200 OK\r\n`
-  let res = statusLine.concat(generateResponse(req))
-  console.log(res) // debug
-  return res
+  statusLine = Buffer.from(statusLine)
+  let [header, body] = await generateResponse(req)
+  let res = Buffer.concat([statusLine, header, body])
+  socket.write(res)
 }
 
 const server = net.createServer(handleConnection).on('error', (err) => console.log(err))
