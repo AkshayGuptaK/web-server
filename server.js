@@ -3,7 +3,7 @@ const fs = require('fs')
 const util = require('util')
 
 const readFile = util.promisify(fs.readFile)
-const resProtocol = 'HTTP/1.1'
+const protocol = 'HTTP/1.1'
 const contentTypes = {
   '.txt': 'text/plain',
   '.html': 'text/html',
@@ -13,7 +13,14 @@ const contentTypes = {
   '.png': 'image/png',
   '.jpeg': 'image/jpeg'
 }
-var routes = { 'GET': {}, 'POST': {} }
+const statusTypes = {
+  'ok': '200 OK',
+  'badreq': '400 Bad_Request',
+  'notimp': '501 Not_Implemented',
+  'errhand': '404 Not_Found'
+}
+
+var routes = { 'GET': {}, 'POST': {}, 'PUT': {}, 'DELETE': {} }
 
 function createServer () {
   return net.createServer(handleConnection).on('error', (err) => console.log(err))
@@ -31,7 +38,7 @@ function handleConnection (socket) {
   console.log('Connection made')
   socket.on('error', (err) => console.log(err))
   socket.setEncoding('utf8')
-  socket.on('data', data => requestHandler(data, socket))
+  socket.on('data', data => processRequest(data, socket))
 }
 
 function parseRequestLine (requestLine) {
@@ -58,12 +65,12 @@ function parseReqBody (body, type) {
   if (!type) {
     return body
   } if (type === 'text/plain') {
-    return toString(body)
+    return String(body)
   } if (type === 'application/json') {
     return JSON.parse(body)
-  } if (type === 'text/uri-list') { // needs testing
+  } if (type === 'application/x-www-form-urlencoded') {
     return decodeURI(body)
-  }
+  } // form data
 }
 
 function parseRequest (request) {
@@ -79,14 +86,41 @@ function utcDate () {
   return d.toUTCString()
 }
 
-function generateResponseHeader (extension, length) {
+function generateStatusLine (status) {
+  status = statusTypes[status]
+  return Buffer.from(`${protocol} ${status}\r\n`)
+}
+
+function generateResponseHeader (type, length) {
   let header = []
   header.push(`date: ${utcDate()}`)
-  header.push(`content-type: ${contentTypes[extension]}`)
-  header.push(`content-length: ${length}`)
   header.push('connection: keep-alive')
+  if (length > 0) {
+    header.push(`content-type: ${type}`)
+    header.push(`content-length: ${length}`)
+  }
   header.push('\n')
-  return header.join('\n')
+  return Buffer.from(header.join('\n'))
+}
+
+function encodeBody (body, type) {
+  if (body.length === 0) {
+    return ''
+  } if (type === 'text/plain') {
+    return String(body)
+  } if (type === 'application/json') {
+    return JSON.stringify(body)
+  } if (type === 'application/x-www-form-urlencoded') {
+    return encodeURI(body)
+  } return body // or return ''
+}
+
+function generateResponse (body, type, status) {
+  let header = generateResponseHeader(type, body.length)
+  let statusLine = generateStatusLine(status)
+  if (body.length > 0) {
+    return Buffer.concat([statusLine, header, body])
+  } return Buffer.concat([statusLine, header])
 }
 
 async function staticFileHandler (request, handlers) {
@@ -97,29 +131,29 @@ async function staticFileHandler (request, handlers) {
   if (target === '/') {
     target = '/index.html'
   }
-  target = `public${target}`
+  target = `public${target}` // make variable
   try {
     let body = await readFile(target)
-    let ext = target.match(/[.](\w)+/)[0]
-    let header = Buffer.from(generateResponseHeader(ext, body.length))
-    return [header, body]
+    let type = contentTypes[target.match(/[.](\w)+/)[0]]
+    return generateResponse(body, type, 'ok')
   } catch (err) {
-    console.log('Error is', err) // debug
     return handlers.next().value(request, handlers)
   }
 }
 
 async function routeHandler (request, handlers) {
   try {
-    return routes[request.reqLine.method][request.reqLine.target](request)
+    let body = await routes[request.reqLine.method][request.reqLine.target](request)
+    let type = request.header['Content-Type']
+    body = Buffer.from(encodeBody(body, type))
+    return generateResponse(body, type, 'ok')
   } catch (err) {
-    console.log('Error is', err) // debug
     return handlers.next().value(request, handlers)
   }
 }
 
 async function errHandler (request, handlers) {
-  return null// send a 404 error
+  return generateResponse('', '', 'errhand')
 }
 
 function * genHandlers () {
@@ -128,24 +162,27 @@ function * genHandlers () {
   yield errHandler
 }
 
-async function requestHandler (request, socket) {
-  let req
+async function requestHandler (request) {
   try {
-    req = parseRequest(request)
+    request = parseRequest(request)
   } catch (err) {
     console.log('Error', err)
-    return `${resProtocol} 400 BadRequest\r\n`
+    return generateResponse('', '', 'badreq') // bad request error
   }
-  if (!Object.keys(routes).includes(req.reqLine.method)) {
-    return `${resProtocol} 501 NotImplemented\r\n`
+  if (!Object.keys(routes).includes(request.reqLine.method)) { // not implemented error
+    return generateResponse('', '', 'notimp')
   }
   let handlers = genHandlers()
-  let res = await handlers.next().value(req, handlers)
-  let statusLine = `${resProtocol} 200 OK\r\n`
-  statusLine = Buffer.from(statusLine)
-  res = Buffer.concat([statusLine, ...res])
-  socket.write(res)
+  return handlers.next().value(request, handlers)
 }
 
+async function processRequest (request, socket) {
+  let response = await requestHandler(request)
+  console.log(String(response)) // debug
+  socket.write(response)
+}
+//
 const server = createServer()
 listen(server, 8000)
+// addRoute('GET', '/tgt', req => 'random text')
+addRoute('POST', '/echo', req => req.body)
