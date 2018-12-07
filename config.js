@@ -1,3 +1,5 @@
+const fdparse = require('./form-data-parser')
+
 module.exports = {
   'protocol': 'HTTP/1.1',
   'fileTypes': {
@@ -12,7 +14,8 @@ module.exports = {
   'contentTypes': {
     'text/plain': { 'decode': String, 'encode': String },
     'application/json': { 'decode': JSON.parse, 'encode': JSON.stringify },
-    'application/x-www-form-urlencoded': { 'decode': decodeURI, 'encode': encodeURI }
+    'application/x-www-form-urlencoded': { 'decode': decodeURI, 'encode': encodeURI },
+    'multipart/form-data': { 'decode': fdparse.parseFormData, 'encode': JSON.stringify }
   },
   'statusTypes': {
     'ok': '200 OK',

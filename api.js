@@ -134,7 +134,9 @@ function parseRequestHeader (request) {
 
 function parseRequestBody (body, type) {
   try {
-    return config.contentTypes[type].decode(body)
+    let typeData = type.split('; ')
+    type = typeData.splice(0, 1)
+    return config.contentTypes[type[0]].decode(body, ...typeData)
   } catch (err) {
     return body
   }
@@ -203,6 +205,8 @@ async function routeHandler (request, handlers) {
   try {
     let body = await routes[request.reqLine.method][request.reqLine.target](request)
     let type = request.header['content-type']
+    let typeData = type.split('; ')
+    type = typeData.splice(0, 1)
     body = Buffer.from(encodeBody(body, type))
     return generateResponse(body, type, 'ok')
   } catch (err) {
@@ -221,11 +225,6 @@ function * genHandlers () {
 }
 
 async function requestHandler (request) {
-  // try {
-  //   request = parseRequest(request)
-  // } catch (err) {
-  //   return generateResponse('', '', 'badreq') // bad request error
-  // }
   if (!Object.keys(routes).includes(request.reqLine.method)) { // method not implemented error
     return generateResponse('', '', 'notimp')
   }
@@ -235,6 +234,5 @@ async function requestHandler (request) {
 
 async function processRequest (request, socket) {
   let response = await requestHandler(request)
-  // console.log(String(response)) // debug
   socket.write(response)
 }
