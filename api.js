@@ -5,6 +5,8 @@ const util = require('util')
 const config = require('./config')
 const readFile = util.promisify(fs.readFile)
 var routes = { 'GET': {}, 'POST': {}, 'PUT': {}, 'DELETE': {} }
+var handlers = [errHandler]
+var staticFileDirectory = 'public'
 
 exports.createServer = function () {
   return net.createServer(handleConnection).on('error', (err) => console.log(err))
@@ -18,10 +20,19 @@ exports.addRoute = function (method, route, controller) {
   routes[method][route] = controller
 }
 
+exports.addStaticHandler = function (directory) {
+  handlers.splice(-1, 0, staticFileHandler)
+  staticFileDirectory = directory
+}
+
+exports.addRouteHandler = function () {
+  handlers.splice(-1, 0, routeHandler)
+}
+
 function handleConnection (socket) {
   console.log('Connection made')
   let request = { 'reqLine': '', 'header': {}, 'body': '' }
-  socket.on('error', (err) => console.log(err))
+  socket.on('error', (err) => console.log(err)) // error response?
   socket.setEncoding('utf8')
   socket.on('data', data => processData(data, request, socket))
 }
@@ -143,8 +154,7 @@ function parseRequestBody (body, type) {
 }
 
 function utcDate () {
-  let d = new Date()
-  return d.toUTCString()
+  return new Date().toUTCString()
 }
 
 function generateStatusLine (status) {
@@ -160,8 +170,8 @@ function generateResponseHeader (type, length) {
   if (length > 0) {
     header.push(`content-type: ${type}`)
   }
-  header.push('\n')
-  return Buffer.from(header.join('\n'))
+  header.push('\r\n')
+  return Buffer.from(header.join('\r\n'))
 }
 
 function encodeBody (body, type) {
@@ -191,7 +201,7 @@ async function staticFileHandler (request, handlers) {
   if (target === '/') {
     target = '/index.html'
   }
-  target = `public${target}` // make variable
+  target = `${staticFileDirectory}${target}` // make variable
   try {
     let body = await readFile(target)
     let type = config.fileTypes[target.match(/[.](\w)+/)[0]]
@@ -210,7 +220,7 @@ async function routeHandler (request, handlers) {
     body = Buffer.from(encodeBody(body, type))
     return generateResponse(body, type, 'ok')
   } catch (err) {
-    return handlers.next().value(request, handlers)
+    return handlers.next().value(request, handlers) 
   }
 }
 
@@ -219,13 +229,13 @@ async function errHandler (request, handlers) {
 }
 
 function * genHandlers () {
-  yield staticFileHandler
-  yield routeHandler
-  yield errHandler
+  for (let handler of handlers) {
+    yield handler
+  }
 }
 
 async function requestHandler (request) {
-  if (!Object.keys(routes).includes(request.reqLine.method)) { // method not implemented error
+  if (!routes.hasOwnProperty(request.reqLine.method)) { // method not implemented error
     return generateResponse('', '', 'notimp')
   }
   let handlers = genHandlers()
